@@ -1,0 +1,1 @@
+# Footballer FaceGAN - Losses Module

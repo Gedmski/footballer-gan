@@ -1,0 +1,152 @@
+# =========================================
+# DCGAN + InfoGAN (128x128) - Base Config
+# =========================================
+
+# ---- Repro / System ----
+project_name: footballer-facegan
+run_name: dcgan_infogan_128_base
+seed: 42
+device: cuda        # cuda | cpu
+amp: true           # PyTorch autocast
+cudnn_benchmark: true
+
+# ---- Paths ----
+paths:
+  data_raw: data/raw
+  data_processed: data/processed
+  outputs: outputs
+  ckpts: outputs/checkpoints
+  samples: outputs/samples
+  logs: outputs/logs
+
+# ---- Data ----
+data:
+  dataset_name: fm_cutout
+  img_size: 128
+  in_channels: 3
+  rgba_to_rgb: true
+  rgba_bg_color: [128, 128, 128]   # gray background to avoid halo
+  center_crop: true
+  normalize:                       # map to [-1, 1]
+    mean: [0.5, 0.5, 0.5]
+    std:  [0.5, 0.5, 0.5]
+  num_workers: 0  # Set to 0 on Windows to avoid multiprocessing issues
+  pin_memory: true
+  shuffle: true
+  val_split: 0.1                   # if 0, use train only
+
+# ---- Augmentation (DiffAugment in D only) ----
+augment:
+  enabled: true
+  policy:
+    color: true
+    translation: true
+    cutout: true
+  prob: 1.0                        # apply always (DiffAug suggests deterministic)
+
+# ---- Model ----
+model:
+  type: dcgan_infogan              # (for Copilot to route to correct class)
+  image_size: 128
+  z_dim: 64                        # Gaussian latent
+  c_cat_dim: 8                     # categorical codes (K clusters)
+  c_cont_dim: 3                    # continuous codes (e.g., lighting, hue, shape)
+  g:
+    base_channels: 64              # ngf
+    out_channels: 3
+    activation: relu
+    last_activation: tanh
+    use_ema: true
+    ema_decay: 0.999
+    # upsampling blocks are implicit from img_size and base_channels
+  d:
+    base_channels: 64              # ndf
+    in_channels: 3
+    activation: leaky_relu
+    spectral_norm: true            # stabilize D
+    r1_reg_gamma: 0                # 0 to disable; set 10 to enable R1
+  q_head:
+    hidden_dim: 128                # small MLP from D features
+    predict_cat: true
+    predict_cont: true
+
+# ---- Losses ----
+loss:
+  gan_loss: nonsat                 # nonsat | lsgan | wgan_gp
+  mi_weight: 1.0                   # InfoGAN mutual information loss weight
+  gp_lambda: 0.0                   # only used for wgan_gp
+  d_label_smoothing: 0.0           # optional
+
+# ---- Optimizers (TTUR) ----
+optim:
+  g:
+    name: adam
+    lr: 0.0002
+    betas: [0.0, 0.9]
+    weight_decay: 0.0
+  d:
+    name: adam
+    lr: 0.0001
+    betas: [0.0, 0.9]
+    weight_decay: 0.0
+
+# ---- Training ----
+train:
+  total_steps: 300000              # ~200k–300k is good; or set epochs instead
+  epochs: null                     # if set, overrides total_steps logic
+  batch_size: 64                   # lower to 32/16 if VRAM tight
+  g_updates_per_step: 1
+  d_updates_per_step: 1
+  grad_accum_steps: 1              # use >1 if batch must be tiny
+  log_every: 200
+  sample_every: 1000
+  checkpoint_every: 5000
+  save_max_checkpoints: 5
+  start_from: null                 # path to checkpoint to resume (or null)
+
+# ---- Evaluation ----
+eval:
+  enabled: true
+  begin_after_steps: 10000
+  every_steps: 5000
+  num_gen_for_fid: 5000            # reduce if VRAM/compute limited
+  real_dir: data/processed
+  fake_dir: outputs/samples_eval
+  metrics:
+    fid: true
+    kid: true
+    precision_recall: false
+
+# ---- Logging ----
+logging:
+  use_tensorboard: true
+  use_wandb: false
+  wandb:
+    entity: null
+    project: footballer-facegan
+    tags: [dcgan, infogan, 128x128, diffaugment]
+  save_images_grid: true
+  grid_rows: 4
+  grid_cols: 4
+
+# ---- Gradio App (inference settings) ----
+app:
+  checkpoint: outputs/checkpoints/ema_latest.pt   # updated by train script
+  truncation_psi: 1.0
+  default_seed: 42
+  c_cat_default: 0
+  c_cont_defaults: [0.0, 0.0, 0.0]
+  pca:
+    enabled: true
+    cache_latents: 20000
+    components: 3
+    range: [-3.0, 3.0]
+
+# ---- Ablations (toggle quickly) ----
+ablations:
+  use_diffaugment: true
+  use_spectralnorm_d: true
+  use_infogan: true
+  use_r1_regularization: false
+  try_lsgan_instead: false
+  try_wgan_gp_instead: false
