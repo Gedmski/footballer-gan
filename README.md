@@ -22,9 +22,15 @@ The model should run efficiently on mid-range GPUs (e.g., RTX 4060) while mainta
 
 ## 🔥 Latest results
 
-Here are the most recent generated samples from the model (small faces grid from the training run). The image below demonstrates the current best qualitative output — replace the placeholder file at `outputs/figs/latest_results.png` with your actual PNG to show the real results.
+Here are the most recent generated samples from the model (small faces grid from the training run). The image below demonstrates the current best qualitative output.
 
-![Latest generated samples](outputs/figs/latest_results.png)
+<!-- Inline image: works with GitHub markdown and in previews. Keep both HTML and Markdown fallback. -->
+<p align="center">
+	<img src="outputs/figs/latest_results.png" alt="Latest generated samples" style="max-width:900px; width:100%; height:auto;" />
+</p>
+
+<!-- Fallback for some renderers: explicit link to the raw file hosted on GitHub -->
+[Latest generated samples](https://raw.githubusercontent.com/Gedmski/footballer-gan/main/outputs/figs/latest_results.png)
 
 ---
 
