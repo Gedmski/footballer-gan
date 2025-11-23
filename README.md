@@ -20,6 +20,15 @@ The model should run efficiently on mid-range GPUs (e.g., RTX 4060) while mainta
 
 ---
 
+## 🔥 Latest results
+
+Here are the most recent generated samples from the model (small faces grid from the training run). The image below demonstrates the current best qualitative output — replace the placeholder file at `outputs/figs/latest_results.png` with your actual PNG to show the real results.
+
+![Latest generated samples](outputs/figs/latest_results.png)
+
+---
+
+
 ## 🏗️ Architecture
 
 | Component | Description |
