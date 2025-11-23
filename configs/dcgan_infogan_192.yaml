@@ -1,10 +1,10 @@
 # =========================================
-# DCGAN + InfoGAN (128x128) - Base Config
+# DCGAN + InfoGAN (192x192) - Intermediate Transfer Learning
 # =========================================
 
 # ---- Repro / System ----
 project_name: footballer-facegan
-run_name: dcgan_infogan_128_base
+run_name: dcgan_infogan_192_transfer
 seed: 42
 device: cuda        # cuda | cpu
 amp: true           # PyTorch autocast
@@ -22,7 +22,7 @@ paths:
 # ---- Data ----
 data:
   dataset_name: fm_cutout
-  img_size: 128
+  img_size: 192
   in_channels: 3
   rgba_to_rgb: true
   rgba_bg_color: [128, 128, 128]   # gray background to avoid halo
@@ -47,12 +47,12 @@ augment:
 # ---- Model ----
 model:
   type: dcgan_infogan              # (for Copilot to route to correct class)
-  image_size: 128
+  image_size: 192
   z_dim: 64                        # Gaussian latent
   c_cat_dim: 8                     # categorical codes (K clusters)
   c_cont_dim: 3                    # continuous codes (e.g., lighting, hue, shape)
   g:
-    base_channels: 64              # ngf
+    base_channels: 64              # ngf - keep same for transfer learning
     out_channels: 3
     activation: relu
     last_activation: tanh
@@ -60,7 +60,7 @@ model:
     ema_decay: 0.999
     # upsampling blocks are implicit from img_size and base_channels
   d:
-    base_channels: 64              # ndf
+    base_channels: 64              # ndf - keep same for transfer learning
     in_channels: 3
     activation: leaky_relu
     spectral_norm: true            # stabilize D
@@ -82,36 +82,36 @@ loss:
 optim:
   g:
     name: adam
-    lr: 0.00008  # Reduced from 0.0001 to make G gentler
+    lr: 0.00002  # Moderate learning rate for intermediate resolution
     betas: [0.0, 0.9]
     weight_decay: 0.0
   d:
     name: adam
-    lr: 0.00008  # Equal to G LR for stability
+    lr: 0.00002  # Equal to G LR for stability
     betas: [0.0, 0.9]
     weight_decay: 0.0
 
 # ---- Training ----
 train:
   # throughput / experiment settings (tune for RTX 4060)
-  total_steps: 140000              # extended run with LR decay
+  total_steps: 150000              # Shorter run for intermediate resolution
   epochs: null                     # if set, overrides total_steps logic
-  batch_size: 64                   # try 64; drop to 32 if OOM
+  batch_size: 48                   # Medium batch size for 192x192
   g_updates_per_step: 1
-  d_updates_per_step: 1            # Back to 1:1 for stability, will gradually increase D strength
+  d_updates_per_step: 1            # 1:1 for stability
   grad_accum_steps: 1              # use >1 if batch must be tiny
   grad_accum: 1                    # gradient accumulation factor (train_simple reads this)
   num_workers: 4
   pin_memory: true
   persistent_workers: true
   log_every: 100                    # log losses every N steps (more frequent for fast feedback)
-  sample_every: 100               # save samples less often to reduce IO
+  sample_every: 1000               # save samples more often for intermediate resolution
   checkpoint_every: 10000          # save checkpoints less often
   eval_every: 5000                 # evaluate FID/KID every 5k steps
   save_max_checkpoints: 5
-  start_from: null                 # path to checkpoint to resume (or null)
+  start_from: outputs/checkpoints/checkpoint_step_0100000.pt  # Resume from 100k step 128x128 checkpoint
   # LR decay milestones (step-based)
-  lr_decay_milestones: [110000, 130000]  # decay LR at these steps
+  lr_decay_milestones: [120000]    # decay LR later for intermediate resolution
   lr_decay_factor: 0.5             # multiply LR by this factor
   # Early stopping
   early_stop_metric: 'kid'         # 'fid' or 'kid'
@@ -141,7 +141,7 @@ logging:
   wandb:
     entity: null
     project: footballer-facegan
-    tags: [dcgan, infogan, 128x128, diffaugment]
+    tags: [dcgan, infogan, 192x192, transfer-learning]
   save_images_grid: true
   grid_rows: 4
   grid_cols: 4

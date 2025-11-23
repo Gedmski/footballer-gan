@@ -1,0 +1,3 @@
+frechet_inception_distance: 518.9884
+kernel_inception_distance_mean: 0.8489
+kernel_inception_distance_std: 0.0041

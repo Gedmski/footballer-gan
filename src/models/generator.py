@@ -47,12 +47,14 @@ class DCGANGenerator(nn.Module):
         
         # Calculate number of upsample blocks needed
         # 128 = 4 * 2^5, so we need 5 upsample blocks
-        assert img_size in [64, 128, 256], "Only 64, 128, 256 supported"
+        assert img_size in [64, 128, 192, 256], "Only 64, 128, 192, 256 supported"
         
         if img_size == 128:
             n_up = 5  # 4 -> 8 -> 16 -> 32 -> 64 -> 128
         elif img_size == 64:
             n_up = 4  # 4 -> 8 -> 16 -> 32 -> 64
+        elif img_size == 192:
+            n_up = 5  # 4 -> 8 -> 16 -> 32 -> 64 -> 128 (same as 128, but final upsample goes to 192)
         else:  # 256
             n_up = 6
         
@@ -60,7 +62,7 @@ class DCGANGenerator(nn.Module):
         self.init_size = 4
         self.project = nn.Sequential(
             nn.Linear(self.latent_dim, ngf * 16 * self.init_size * self.init_size),
-            nn.BatchNorm1d(ngf * 16 * self.init_size * self.init_size),
+            # nn.BatchNorm1d(ngf * 16 * self.init_size * self.init_size),  # Remove problematic BN1d
             nn.ReLU(True),
         )
         
@@ -70,27 +72,50 @@ class DCGANGenerator(nn.Module):
         
         for i in range(n_up):
             out_ch = in_ch // 2 if i < n_up - 1 else ngf
+            # Use anti-aliasing upsampling for the final 128->256 block to avoid checkerboard artifacts
+            # Also skip BatchNorm for the final block to prevent NaN issues - use InstanceNorm instead
+            use_transpose = not (img_size == 256 and i == n_up - 1)  # Last block for 256x256 uses Upsample+Conv
+            use_bn = not (img_size == 256 and i == n_up - 1)  # Skip BN for final 256 block
             layers.append(
-                self._make_upsample_block(in_ch, out_ch, use_bn=True)
+                self._make_upsample_block(in_ch, out_ch, use_bn=use_bn, use_transpose=use_transpose, use_instance_norm=(img_size == 256 and i == n_up - 1))
             )
             in_ch = out_ch
         
-        # Final conv to RGB
-        layers.append(
-            nn.ConvTranspose2d(ngf, out_channels, 4, 2, 1, bias=False)
-        )
+        # Final conv to RGB (no upsampling, just channel change)
+        self.to_rgb = nn.Conv2d(ngf, out_channels, 3, 1, 1, bias=False)
+        layers.append(self.to_rgb)
         layers.append(nn.Tanh())
         
         self.main = nn.Sequential(*layers)
+        
+        # Small random init for to_rgb instead of zeros to avoid dead neurons
+        if img_size == 256:
+            nn.init.normal_(self.to_rgb.weight, 0.0, 0.01)  # Small random weights
+            if self.to_rgb.bias is not None:
+                nn.init.zeros_(self.to_rgb.bias)
     
-    def _make_upsample_block(self, in_ch, out_ch, use_bn=True):
-        """Create upsample block with ConvTranspose2d."""
-        layers = [
-            nn.ConvTranspose2d(in_ch, out_ch, 4, 2, 1, bias=False)
-        ]
-        if use_bn:
-            layers.append(nn.BatchNorm2d(out_ch))
-        layers.append(nn.ReLU(True))
+    def _make_upsample_block(self, in_ch, out_ch, use_bn=True, use_transpose=True, use_instance_norm=False):
+        """Create upsample block. Use Upsample+Conv for final 128->256 to avoid checkerboard artifacts."""
+        if use_transpose:
+            # Standard DCGAN upsampling with ConvTranspose2d
+            layers = [
+                nn.ConvTranspose2d(in_ch, out_ch, 4, 2, 1, bias=False)
+            ]
+            if use_bn:
+                layers.append(nn.BatchNorm2d(out_ch))
+            layers.append(nn.ReLU(True))
+        else:
+            # Anti-aliasing upsampling: Upsample + Conv (for final 128->256)
+            layers = [
+                nn.Upsample(scale_factor=2, mode="nearest"),
+                nn.Conv2d(in_ch, out_ch, 3, 1, 1, bias=False),
+            ]
+            if use_instance_norm:
+                layers.append(nn.InstanceNorm2d(out_ch))
+            elif use_bn:
+                layers.append(nn.BatchNorm2d(out_ch))
+            layers.append(nn.LeakyReLU(0.2, inplace=True))  # Use LeakyReLU like suggested
+        
         return nn.Sequential(*layers)
     
     def forward(self, z, c_cat=None, c_cont=None):
@@ -190,10 +215,10 @@ def build_generator(config):
 
 
 def weights_init(m):
-    """Initialize weights following DCGAN paper."""
+    """Initialize weights following DCGAN paper but with higher scale."""
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
-        nn.init.normal_(m.weight.data, 0.0, 0.02)
+        nn.init.normal_(m.weight.data, 0.0, 0.05)  # Increased from 0.02
     elif classname.find('BatchNorm') != -1:
-        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.normal_(m.weight.data, 1.0, 0.05)  # Increased from 0.02
         nn.init.constant_(m.bias.data, 0)

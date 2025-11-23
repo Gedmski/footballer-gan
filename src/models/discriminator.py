@@ -107,6 +107,10 @@ class DCGANDiscriminator(nn.Module):
             return logit.view(-1), features
         else:
             return logit.view(-1)
+    
+    def features(self, img):
+        """Return penultimate features for feature matching."""
+        return self.main(img)
 
 
 def build_discriminator(config):
